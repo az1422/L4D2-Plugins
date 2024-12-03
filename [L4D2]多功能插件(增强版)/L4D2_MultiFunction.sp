@@ -1,5 +1,3 @@
-
-
 #pragma semicolon 1
 #pragma dynamic 231072
 #pragma newdecls required
