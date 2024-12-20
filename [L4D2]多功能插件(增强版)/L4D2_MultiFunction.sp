@@ -42,7 +42,7 @@ public Plugin myinfo =
 	author = "ヾ藤野深月ゞ",
 	description = "该插件包含闲置、自杀、加入游戏等多功能整合插件, 具体详情请查阅CFG文件",
 	version = PLUGIN_VERSION,
-	url = "https://github.com/az1422/Tysy_Other"
+	url = "https://github.com/az1422/L4D2-Plugins"
 }
 
 public void OnPluginStart()
