@@ -30,11 +30,13 @@ static float g_iPlayerTeamTimer, PlayeChangeTimer[MAXPLAYERS+1];
 static char GetMapName[64], g_cAttackCurrentChar[8], g_cAttackDamagesChar[8];
 static int g_iPlayerTeamCount, PlayeChangeCount[MAXPLAYERS+1], RoundFailCount, g_iAttackHealthSetMode, g_iAttackHealthMaxLeng, g_iCharLength;
 static bool g_bPlayerAwayEnable, g_bPlayerJoinEnable, g_bPlayerKillEnable, g_bPlayerBotsEnable, g_bPlayerTeamEnable, g_bPlayerChangeName, g_bOnReStartServer, 
-	g_bReStarLevelMaps, g_bReStarRoundEnable, g_bConnectedEnable, g_bReSurvivalHealth, g_bSurvivalWeaponDrop, g_bAttackHealthDisplay;
-ConVar g_hPlayerAwayEnable, g_hPlayerJoinEnable, g_hPlayerKillEnable, g_hPlayerBotsEnable, g_hPlayerTeamEnable, g_hPlayerTeamCount, 
+	g_bReStarLevelMaps, g_bReStarRoundEnable, g_bConnectedEnable, g_bReSurvivalHealth, g_bSurvivalWeaponDrop, g_bSurvivalDeathDrop, g_bAttackHealthDisplay;
+static ConVar g_hPlayerAwayEnable, g_hPlayerJoinEnable, g_hPlayerKillEnable, g_hPlayerBotsEnable, g_hPlayerTeamEnable, g_hPlayerTeamCount, 
 	g_hPlayerTeamTimer, g_hPlayerChangeName, g_hOnReStartServer, g_hReStarLevelMaps, g_hReStarRoundEnable, g_hConnectedEnable, g_hReSurvivalHealth, 
-	g_hSurvivalWeaponDrop, g_hAttackHealthDisplay, g_hAttackHealthSetMode, g_hAttackHealthMaxLeng, g_hAttackCurrentChar, g_hAttackDamagesChar;
+	g_hSurvivalWeaponDrop, g_hSurvivalDeathDrop, g_hAttackHealthDisplay, g_hAttackHealthSetMode, g_hAttackHealthMaxLeng, g_hAttackCurrentChar, g_hAttackDamagesChar;
 
+static ConVar 
+	ConVar_BotsLimit;
 
 public Plugin myinfo = 
 {
@@ -43,6 +45,21 @@ public Plugin myinfo =
 	description = "该插件包含闲置、自杀、加入游戏等多功能整合插件, 具体详情请查阅CFG文件",
 	version = PLUGIN_VERSION,
 	url = "https://github.com/az1422/L4D2-Plugins"
+}
+
+/* -----------------------------------------------------------
+					AskPluginLoad2
+----------------------------------------------------------- */
+public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
+{
+	EngineVersion test = GetEngineVersion();
+	if( test != Engine_Left4Dead && test != Engine_Left4Dead2 )
+	{
+		strcopy(error, err_max, "Plugin only supports Left 4 Dead 1 & 2.");
+		return APLRes_SilentFailure;
+	}
+	RegPluginLibrary("L4D2_MultiFunction");
+	return APLRes_Success;
 }
 
 public void OnPluginStart()
@@ -62,7 +79,8 @@ public void OnPluginStart()
 	g_hReStarRoundEnable			= CreateConVar("L4D2_MultiFunction_RestarRound",			"1",		"是否开启在团灭时显示团灭次数功能？ [0=禁用 1=启用]", FCVAR_NOTIFY, true, 0.0, true, 1.0);
 	g_hConnectedEnable				= CreateConVar("L4D2_MultiFunction_Connected",				"0",		"是否开启玩家连接(断开)服务器时的提示功能？ [0=禁用 1=启用]", FCVAR_NOTIFY, true, 0.0, true, 1.0);
 	g_hReSurvivalHealth				= CreateConVar("L4D2_MultiFunction_ReSurHealth",			"1",		"是否开启过关幸存者自动补充生命值？ [0=禁用 1=启用]", FCVAR_NOTIFY, true, 0.0, true, 1.0);
-	g_hSurvivalWeaponDrop			= CreateConVar("L4D2_MultiFunction_WeaponDrop",				"1",		"是否开启过幸存者丢弃当前武器功能？ [0=禁用 1=启用] (丢弃指令：!d & !g & !drop)", FCVAR_NOTIFY, true, 0.0, true, 1.0);
+	g_hSurvivalWeaponDrop			= CreateConVar("L4D2_MultiFunction_WeaponDrop",				"1",		"是否开启生还者死亡副武器掉落修复？ [0=禁用 1=启用]", FCVAR_NOTIFY, true, 0.0, true, 1.0);
+	g_hSurvivalDeathDrop			= CreateConVar("L4D2_MultiFunction_DeathDrop",				"1",		"设置攻击者显示受害者血量的显受伤血量符号");
 	g_hAttackHealthDisplay		= CreateConVar("L4D2_MultiFunction_HealthDisplay",		"1",		"是否开启攻击者显示受害者血量功能？ [0=禁用 1=启用]", FCVAR_NOTIFY, true, 0.0, true, 1.0);
 	g_hAttackHealthSetMode		= CreateConVar("L4D2_MultiFunction_HealthSetMode",		"0",		"设置攻击者显示受害者血量的显示模式？ [0=图形 1=文字]", FCVAR_NOTIFY, true, 0.0, true, 1.0);
 	g_hAttackHealthMaxLeng		= CreateConVar("L4D2_MultiFunction_HealthMaxLeng",		"50",		"设置攻击者显示受害者血量的显示长度？", FCVAR_NOTIFY, true, 10.0, true, 200.0);
@@ -98,8 +116,27 @@ public void OnPluginStart()
 	HookEvent("map_transition", 					Event_RoundWin,						EventHookMode_PostNoCopy);
 	HookEvent("finale_vehicle_leaving",		Event_RoundWin,						EventHookMode_PostNoCopy);
 	HookUserMessage(GetUserMessageId("SayText2"), Message_ChangeUserName, true);
+	/* SECONDARY Death Drop Fix */
+	HookEvent("player_use",								Event_PlayerUseDropFix,		EventHookMode_Post);
+	HookEvent("player_death",							Event_PlayerDeathDropFix,	EventHookMode_Pre);
+	HookEvent("player_bot_replace",				Event_ReplacedBotFix);
+	HookEvent("bot_player_replace",				Event_ReplacedPlayerFix);
 	/* 创建Config */
 	AutoExecConfig(true, "L4D2_MultiFunction");
+}
+
+/* -----------------------------------------------------------
+					OnAllPluginsLoaded
+----------------------------------------------------------- */
+public void OnAllPluginsLoaded()
+{
+	ConVar_BotsLimit = FindConVar("bots_limit");
+	for(int i = 1; i <= MaxClients; i++)
+	{
+		if(!IsValidClient(i)) continue;
+		ReSetPlayerChangeData(i);
+		//SDKHook(i, SDKHook_WeaponCanUse, OnWeaponCanUse);
+	}
 }
 
 /* -----------------------------------------------------------
@@ -133,6 +170,7 @@ public void ChangeConVarExecuted()
 	g_hConnectedEnable.AddChangeHook(ConVarChanged_Allow);
 	g_hReSurvivalHealth.AddChangeHook(ConVarChanged_Allow);
 	g_hSurvivalWeaponDrop.AddChangeHook(ConVarChanged_Allow);
+	g_hSurvivalDeathDrop.AddChangeHook(ConVarChanged_Allow);
 	g_hAttackHealthDisplay.AddChangeHook(ConVarChanged_Allow);
 	g_hAttackHealthSetMode.AddChangeHook(ConVarChanged_Allow);
 	g_hAttackHealthMaxLeng.AddChangeHook(ConVarChanged_Allow);
@@ -156,6 +194,7 @@ public void LoadAllowedCvar()
 	g_bConnectedEnable	=	g_hConnectedEnable.BoolValue;
 	g_bReSurvivalHealth	=	g_hReSurvivalHealth.BoolValue;
 	g_bSurvivalWeaponDrop = g_hSurvivalWeaponDrop.BoolValue;
+	g_bSurvivalDeathDrop = g_hSurvivalDeathDrop.BoolValue;
 	g_bAttackHealthDisplay = g_hAttackHealthDisplay.BoolValue;
 	g_iAttackHealthSetMode = g_hAttackHealthSetMode.IntValue;
 	g_iAttackHealthMaxLeng = g_hAttackHealthMaxLeng.IntValue;
@@ -170,9 +209,167 @@ public void LoadConVarString()
 		g_iCharLength = 1;
 	}
 }
+
+/* -----------------------------------------------------------
+					Survival Death Drop Fix
+----------------------------------------------------------- */
+#define SECONDARY_PISTOL         "weapon_pistol"
+#define SECONDARY_PISTOL_MAGNUM  "weapon_pistol_magnum"
+#define SECONDARY_MELEE          "weapon_melee"
+#define SECONDARY_NONE           "none"
+
+static bool bIsDualPostol[MAXPLAYERS+1] = { false, ... };
+static char sSecondary[MAXPLAYERS+1][128], sMeleeScript[MAXPLAYERS+1][128];
+
+public void Event_ReplacedBotFix(Event event, const char[] name, bool dontBroadcast)
+{
+	if(!g_bSurvivalDeathDrop) return;
+	int bot = GetClientOfUserId(event.GetInt("bot"));
+	int player = GetClientOfUserId(event.GetInt("player"));
+	if(!IsSurvivalClient(bot) || !IsSurvivalClient(player)) return;
+	sSecondary[bot] = sSecondary[player];
+	sMeleeScript[bot] = sMeleeScript[player];
+	bIsDualPostol[bot] = bIsDualPostol[player];
+	sSecondary[player] = SECONDARY_PISTOL;
+	sMeleeScript[player] = SECONDARY_NONE;
+	bIsDualPostol[player] = false;
+	//PrintToServer("[DeathFix]保存生还者 %N 副武器 %s(%s) 数据...", bot, sSecondary[bot], sMeleeScript[bot]);
+}
+
+public void Event_ReplacedPlayerFix(Event event, const char[] name, bool dontBroadcast)
+{
+	if(!g_bSurvivalDeathDrop) return;
+	int bot = GetClientOfUserId(event.GetInt("bot"));
+	int player = GetClientOfUserId(event.GetInt("player"));
+	if(!IsSurvivalClient(bot) || !IsSurvivalClient(player)) return;
+	sSecondary[player] = sSecondary[bot];
+	sMeleeScript[player] = sMeleeScript[bot];
+	bIsDualPostol[player] = bIsDualPostol[bot];
+	sSecondary[bot] = SECONDARY_PISTOL;
+	sMeleeScript[bot] = SECONDARY_NONE;
+	bIsDualPostol[bot] = false;
+	//PrintToServer("[DeathFix]保存生还者 %N 副武器 %s(%s) 数据...", player, sSecondary[bot], sMeleeScript[bot]);
+}
+/*
+public Action OnWeaponCanUse(int client, int iWeapon)
+{
+	if(!IsSurvivalClient(client) || iWeapon == -1 || !IsValidEdict(iWeapon)) return Plugin_Continue;
+	static char sWeapon[128];
+	GetEntityClassname(iWeapon, sWeapon, sizeof(sWeapon));
+	if(StrContains(sWeapon, "pistol") == -1 && StrContains(sWeapon, "melee") == -1) return Plugin_Continue;
+	if(StrEqual(sWeapon, SECONDARY_PISTOL))
+	{
+		sSecondary[client] = SECONDARY_PISTOL;
+		int IsDualGun = GetEntProp(iWeapon, Prop_Send, "m_isDualWielding", 1);
+		bIsDualPostol[client] = (IsDualGun ? true : false);
+		//PrintToServer("[DeathFix]保存生还者 %N 副武器 %s(%s) 数据...", client, sWeapon, (bIsDualPostol[client] ? "双手枪" : "单手枪"));
+	}
+	if(StrEqual(sWeapon, SECONDARY_PISTOL_MAGNUM))
+	{
+		sSecondary[client] = SECONDARY_PISTOL_MAGNUM;
+		bIsDualPostol[client] = false;
+		//PrintToServer("[DeathFix]保存生还者 %N 副武器 %s(马格南) 数据...", client, sWeapon);
+	}
+	if(StrEqual(sWeapon, SECONDARY_MELEE))
+	{
+		DetermineMeleeScript(client, iWeapon);
+		bIsDualPostol[client] = false;
+		//PrintToServer("[DeathFix]保存生还者 %N 副武器 %s(近战) 数据...", client, sWeapon);
+	}
+	return Plugin_Continue;
+}*/
+
+public void Event_PlayerUseDropFix(Event event, const char[] name, bool dontBroadcast) 
+{
+	if(!g_bSurvivalDeathDrop) return;
+	int client = GetClientOfUserId(event.GetInt("userid"));
+	int entity = event.GetInt("targetid");
+	if(!IsSurvivalClient(client) || !IsValidEdict(entity)) return;
+	static char sWeapon[32];
+	GetEntityClassname(entity, sWeapon, sizeof(sWeapon));
+	if(StrContains(sWeapon, "pistol") == -1 && StrContains(sWeapon, "melee") == -1) return;
+	int iWeapon = GetPlayerWeaponSlot(client, 1);
+	if(iWeapon == -1 || !IsValidEdict(iWeapon)) return;
+	GetEntityClassname(iWeapon, sWeapon, sizeof(sWeapon));
+	if(StrEqual(sWeapon, SECONDARY_PISTOL))
+	{
+		sSecondary[client] = SECONDARY_PISTOL;
+		int IsDualGun = GetEntProp(iWeapon, Prop_Send, "m_isDualWielding", 1);
+		bIsDualPostol[client] = (IsDualGun ? true : false);
+		//PrintToServer("[DeathFix]保存生还者 %N 副武器 %s(%s) 数据...", client, sWeapon, (bIsDualPostol[client] ? "双手枪" : "单手枪"));
+		return;
+	}
+	if(StrEqual(sWeapon, SECONDARY_PISTOL_MAGNUM))
+	{
+		sSecondary[client] = SECONDARY_PISTOL_MAGNUM;
+		bIsDualPostol[client] = false;
+		//PrintToServer("[DeathFix]保存生还者 %N 副武器 %s(马格南) 数据...", client, sWeapon);
+		return;
+	}
+	if(StrEqual(sWeapon, SECONDARY_MELEE))
+	{
+		DetermineMeleeScript(client, iWeapon);
+		bIsDualPostol[client] = false;
+		//PrintToServer("[DeathFix]保存生还者 %N 副武器 %s(%s) 数据...", client, sWeapon, sMeleeScript[client]);
+		return;
+	}
+}
+
+public void Event_PlayerDeathDropFix(Event event, const char[] name, bool dontBroadcast) 
+{
+	if(!g_bSurvivalDeathDrop) return;
+	int client = GetClientOfUserId(event.GetInt("userid"));
+	if(!IsSurvivalClient(client)) return;
+	L4D2_SpawnSecondaryWeapon(client, (bIsDualPostol[client] ? 2 : 1));
+}
+
+public void DetermineMeleeScript(int client, int iWeapon)
+{
+	sSecondary[client] = SECONDARY_MELEE;
+	static char sWeapon[64];
+	GetEntPropString(iWeapon, Prop_Data, "m_strMapSetScriptName", sWeapon, sizeof(sWeapon));
+	sMeleeScript[client] = sWeapon;
+}
+
+public void L4D2_SpawnSecondaryWeapon(int client, int iCount)
+{
+	int iWeapon;
+	for(int i = 0; i < iCount; i++)
+	{
+		if(StrEqual(sSecondary[client], SECONDARY_PISTOL))
+		{
+			iWeapon = CreateEntityByName(SECONDARY_PISTOL);
+		}
+		if(StrEqual(sSecondary[client], SECONDARY_PISTOL_MAGNUM))
+		{
+			iWeapon = CreateEntityByName(SECONDARY_PISTOL_MAGNUM);
+		}
+		if(StrEqual(sSecondary[client], SECONDARY_MELEE))
+		{
+			if(StrEqual(sMeleeScript[client], SECONDARY_NONE)) return;
+			iWeapon = CreateEntityByName(SECONDARY_MELEE);
+			DispatchKeyValue(iWeapon, "melee_script_name", sMeleeScript[client]);
+		}
+		if(iWeapon == -1 || !IsValidEdict(iWeapon)) return;
+		DispatchSpawn(iWeapon);
+		float vOrigin[3], vecAngles[3], vecVelocity[3];
+		GetClientEyePosition(client, vOrigin);
+		GetClientEyeAngles(client, vecAngles);
+		GetAngleVectors(vecAngles, vecVelocity, NULL_VECTOR, NULL_VECTOR);
+		TeleportEntity(iWeapon, vOrigin, NULL_VECTOR, vecVelocity);
+	}
+	//PrintToServer("[DeathFix]正在生成生还者 %N 副武器 %s 数据...", client, sSecondary[client]);
+}
 /* -----------------------------------------------------------
 					Connected
 ----------------------------------------------------------- */
+public void OnClientPutInServer(int client)
+{
+	//SDKHook(client, SDKHook_WeaponCanUse, OnWeaponCanUse);
+	if(IsFakeClient(client)) return;
+	//SDKHook(client, SDKHook_OnTakeDamage,	OnTakeDamage);
+}
+
 public void OnClientConnected(int client)
 {
 	if(IsFakeClient(client)) return;
@@ -184,6 +381,8 @@ public void OnClientConnected(int client)
 /* 玩家离开游戏 */
 public void OnClientDisconnect(int client)
 {
+	//SDKUnhook(client, SDKHook_WeaponCanUse, OnWeaponCanUse);
+	//SDKUnhook(client, SDKHook_OnTakeDamage,	OnTakeDamage);
 	if(IsFakeClient(client)) return;
 	ReSetPlayerChangeData(client);
 	if(g_bConnectedEnable)
@@ -316,7 +515,12 @@ public void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
 {
 	if(!g_bPlayerTeamEnable) return;
 	for(int i = 1; i <= MaxClients; i++)
+	{
 		ReSetPlayerChangeData(i);
+		sSecondary[i] = SECONDARY_PISTOL;
+		sMeleeScript[i] = SECONDARY_NONE;
+		bIsDualPostol[i] = false;
+	}
 }
 
 public void Event_MissionLost(Event event, const char[] name, bool dontBroadcast)
@@ -351,6 +555,7 @@ public Action Command_AddOneBot(int client, int args)
 {
 	if(!IsValidClient(client) || !g_bPlayerBotsEnable) return Plugin_Handled;
 	CreateFakeClientFunction();
+	ConVar_BotsLimit.SetInt(GetAllSurvivalCount());
 	PrintToChatAll("\x04[提示]\x03正在执行创建\x05 幸存者Bot \x03玩家!");
 	return Plugin_Continue;
 }
@@ -368,6 +573,7 @@ public Action Command_KickAllBot(int client, int args)
 		if(!IsSurvivalClient(i) || !IsFakeClient(i)) continue;
 		KickClient(i, "正在执行清除所有幸存者电脑Bot玩家....");
 	}
+	ConVar_BotsLimit.SetInt(GetAllPlayerCount());
 	PrintToChatAll("\x04[提示]\x03已踢出所有\x05 幸存者Bot \x03玩家!");
 	return Plugin_Continue;
 }
@@ -459,7 +665,7 @@ public Action Command_WeaponDrop(int client, int args)
 	char sWeapon[128];
 	GetClientWeapon(client, sWeapon, sizeof(sWeapon));
 	int iWeapon = GetPlayerWeaponSlot(client, GetWeaponDropCount(sWeapon));
-	if(!IsValidEntity(iWeapon) && 0 < iWeapon > 4)
+	if(iWeapon == -1 || !IsValidEdict(iWeapon) && 0 < iWeapon > 4)
 	{
 		PrintToChat(client, "\x04[提示]\x03你当前已经没有武器可以丢弃了!");
 		return Plugin_Handled;
@@ -627,6 +833,17 @@ public bool IsSurvivorTeamFull()
 			return false;
 	}
 	return true;
+}
+
+public int GetAllSurvivalCount()
+{
+	int count = 0;
+	for(int i = 1; i <= MaxClients; i++)
+	{
+		if(IsSurvivalClient(i))
+			count++;
+	}
+	return count;
 }
 
 public int GetAllPlayerCount()
