@@ -5,7 +5,11 @@
 #include <sdktools>
 #include <left4dhooks>
 
-#define PLUGIN_VERSION					"1.2_NewCode"
+#define SECONDARY_PISTOL         "weapon_pistol"
+#define SECONDARY_PISTOL_MAGNUM  "weapon_pistol_magnum"
+#define SECONDARY_MELEE          "weapon_melee"
+#define SECONDARY_NONE           "none"
+#define PLUGIN_VERSION					"1.3_NewCode"
 #define LineNext 								"▬▬▬▬▬▬▬▬▬▬"
 #define IsValidClient(%1)				(1 <= %1 <= MaxClients && IsClientInGame(%1))
 #define IsSurvivalClient(%1)		(IsValidClient(%1) && GetClientTeam(%1) == 2)
@@ -13,7 +17,10 @@
 #define GetCurrentHealth(%1)		(GetEntProp(%1, Prop_Data, "m_iHealth"))
 #define GetMaxHealth(%1)				(GetEntProp(%1, Prop_Data, "m_iMaxHealth"))
 #define IsIncapacitated(%1)			(GetEntProp(%1, Prop_Send, "m_isIncapacitated") == 1)
-
+/* Survival Death Drop Fix */
+static bool bIsDualPostol[MAXPLAYERS+1] = { false, ... };
+static char sSecondary[MAXPLAYERS+1][128], sMeleeScript[MAXPLAYERS+1][128];
+/* 其他必要参数 */
 static char GetHitGroup[][] = {"Unknown", "头部", "胸部", "腹部", "左手", "右手", "左脚"};
 static char WeaponNames[][] =
 {
@@ -212,15 +219,10 @@ public void LoadConVarString()
 
 /* -----------------------------------------------------------
 					Survival Death Drop Fix
+已知问题：
+	SDKHook	——	无法识别双手枪, 且Bot玩家会持续刷屏
+	Event		——	无法识别管理员发放的武器, 但是用表现良好
 ----------------------------------------------------------- */
-#define SECONDARY_PISTOL         "weapon_pistol"
-#define SECONDARY_PISTOL_MAGNUM  "weapon_pistol_magnum"
-#define SECONDARY_MELEE          "weapon_melee"
-#define SECONDARY_NONE           "none"
-
-static bool bIsDualPostol[MAXPLAYERS+1] = { false, ... };
-static char sSecondary[MAXPLAYERS+1][128], sMeleeScript[MAXPLAYERS+1][128];
-
 public void Event_ReplacedBotFix(Event event, const char[] name, bool dontBroadcast)
 {
 	if(!g_bSurvivalDeathDrop) return;
@@ -248,7 +250,7 @@ public void Event_ReplacedPlayerFix(Event event, const char[] name, bool dontBro
 	sSecondary[bot] = SECONDARY_PISTOL;
 	sMeleeScript[bot] = SECONDARY_NONE;
 	bIsDualPostol[bot] = false;
-	//PrintToServer("[DeathFix]保存生还者 %N 副武器 %s(%s) 数据...", player, sSecondary[bot], sMeleeScript[bot]);
+	//PrintToServer("[DeathFix]保存生还者 %N 副武器 %s(%s) 数据...", player, sSecondary[player], sMeleeScript[player]);
 }
 /*
 public Action OnWeaponCanUse(int client, int iWeapon)
