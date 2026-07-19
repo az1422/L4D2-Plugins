@@ -142,7 +142,7 @@ public void OnAllPluginsLoaded()
 	{
 		if(!IsValidClient(i)) continue;
 		ReSetPlayerChangeData(i);
-		//SDKHook(i, SDKHook_WeaponCanUse, OnWeaponCanUse);
+		SDKHook(i, SDKHook_WeaponCanUse, OnWeaponCanUse);
 	}
 }
 
@@ -232,7 +232,7 @@ public void Event_ReplacedBotFix(Event event, const char[] name, bool dontBroadc
 	sSecondary[bot] = sSecondary[player];
 	sMeleeScript[bot] = sMeleeScript[player];
 	bIsDualPostol[bot] = bIsDualPostol[player];
-	sSecondary[player] = SECONDARY_PISTOL;
+	sSecondary[player] = SECONDARY_NONE;
 	sMeleeScript[player] = SECONDARY_NONE;
 	bIsDualPostol[player] = false;
 	//PrintToServer("[DeathFix]保存生还者 %N 副武器 %s(%s) 数据...", bot, sSecondary[bot], sMeleeScript[bot]);
@@ -247,15 +247,16 @@ public void Event_ReplacedPlayerFix(Event event, const char[] name, bool dontBro
 	sSecondary[player] = sSecondary[bot];
 	sMeleeScript[player] = sMeleeScript[bot];
 	bIsDualPostol[player] = bIsDualPostol[bot];
-	sSecondary[bot] = SECONDARY_PISTOL;
+	sSecondary[bot] = SECONDARY_NONE;
 	sMeleeScript[bot] = SECONDARY_NONE;
 	bIsDualPostol[bot] = false;
 	//PrintToServer("[DeathFix]保存生还者 %N 副武器 %s(%s) 数据...", player, sSecondary[player], sMeleeScript[player]);
 }
-/*
+
 public Action OnWeaponCanUse(int client, int iWeapon)
 {
 	if(!IsSurvivalClient(client) || iWeapon == -1 || !IsValidEdict(iWeapon)) return Plugin_Continue;
+	if(!StrEqual(sSecondary[client], SECONDARY_NONE) && !StrEqual(sMeleeScript[client], SECONDARY_NONE)) return Plugin_Continue;
 	static char sWeapon[128];
 	GetEntityClassname(iWeapon, sWeapon, sizeof(sWeapon));
 	if(StrContains(sWeapon, "pistol") == -1 && StrContains(sWeapon, "melee") == -1) return Plugin_Continue;
@@ -264,22 +265,22 @@ public Action OnWeaponCanUse(int client, int iWeapon)
 		sSecondary[client] = SECONDARY_PISTOL;
 		int IsDualGun = GetEntProp(iWeapon, Prop_Send, "m_isDualWielding", 1);
 		bIsDualPostol[client] = (IsDualGun ? true : false);
-		//PrintToServer("[DeathFix]保存生还者 %N 副武器 %s(%s) 数据...", client, sWeapon, (bIsDualPostol[client] ? "双手枪" : "单手枪"));
+		PrintToServer("[OnCanUse]保存生还者 %N 副武器 %s(%s) 数据...", client, sWeapon, (bIsDualPostol[client] ? "双手枪" : "单手枪"));
 	}
 	if(StrEqual(sWeapon, SECONDARY_PISTOL_MAGNUM))
 	{
 		sSecondary[client] = SECONDARY_PISTOL_MAGNUM;
 		bIsDualPostol[client] = false;
-		//PrintToServer("[DeathFix]保存生还者 %N 副武器 %s(马格南) 数据...", client, sWeapon);
+		PrintToServer("[OnCanUse]保存生还者 %N 副武器 %s(马格南) 数据...", client, sWeapon);
 	}
 	if(StrEqual(sWeapon, SECONDARY_MELEE))
 	{
 		DetermineMeleeScript(client, iWeapon);
 		bIsDualPostol[client] = false;
-		//PrintToServer("[DeathFix]保存生还者 %N 副武器 %s(近战) 数据...", client, sWeapon);
+		PrintToServer("[OnCanUse]保存生还者 %N 副武器 %s(%s) 数据...", client, sWeapon, sMeleeScript[client]);
 	}
 	return Plugin_Continue;
-}*/
+}
 
 public void Event_PlayerUseDropFix(Event event, const char[] name, bool dontBroadcast) 
 {
@@ -367,7 +368,7 @@ public void L4D2_SpawnSecondaryWeapon(int client, int iCount)
 ----------------------------------------------------------- */
 public void OnClientPutInServer(int client)
 {
-	//SDKHook(client, SDKHook_WeaponCanUse, OnWeaponCanUse);
+	SDKHook(client, SDKHook_WeaponCanUse, OnWeaponCanUse);
 	if(IsFakeClient(client)) return;
 	//SDKHook(client, SDKHook_OnTakeDamage,	OnTakeDamage);
 }
@@ -383,7 +384,7 @@ public void OnClientConnected(int client)
 /* 玩家离开游戏 */
 public void OnClientDisconnect(int client)
 {
-	//SDKUnhook(client, SDKHook_WeaponCanUse, OnWeaponCanUse);
+	SDKUnhook(client, SDKHook_WeaponCanUse, OnWeaponCanUse);
 	//SDKUnhook(client, SDKHook_OnTakeDamage,	OnTakeDamage);
 	if(IsFakeClient(client)) return;
 	ReSetPlayerChangeData(client);
@@ -407,10 +408,35 @@ public void ReSurvivalHealthStart(int client)
 
 public Action L4D_OnFirstSurvivorLeftSafeArea(int client)
 {
+	static char sWeapon[32];
 	for(int i = 1; i <= MaxClients; i++)
 	{
 		if(!IsSurvivalClient(i) || !IsPlayerAlive(i)) continue;
 		ReSurvivalHealthStart(i);
+		if(!StrEqual(sSecondary[i], SECONDARY_NONE) && !StrEqual(sMeleeScript[i], SECONDARY_NONE)) continue;
+		int iWeapon = GetPlayerWeaponSlot(i, 1);
+		if(iWeapon == -1 || !IsValidEdict(iWeapon)) continue;
+		GetEntityClassname(iWeapon, sWeapon, sizeof(sWeapon));
+		if(StrContains(sWeapon, "pistol") == -1 && StrContains(sWeapon, "melee") == -1) continue;
+		if(StrEqual(sWeapon, SECONDARY_PISTOL))
+		{
+			sSecondary[i] = SECONDARY_PISTOL;
+			int IsDualGun = GetEntProp(iWeapon, Prop_Send, "m_isDualWielding", 1);
+			bIsDualPostol[i] = (IsDualGun ? true : false);
+			//PrintToServer("[DeathFix]保存生还者 %N 副武器 %s(%s) 数据...", i, sWeapon, (bIsDualPostol[i] ? "双手枪" : "单手枪"));
+		}
+		if(StrEqual(sWeapon, SECONDARY_PISTOL_MAGNUM))
+		{
+			sSecondary[i] = SECONDARY_PISTOL_MAGNUM;
+			bIsDualPostol[i] = false;
+			//PrintToServer("[DeathFix]保存生还者 %N 副武器 %s(马格南) 数据...", i, sWeapon);
+		}
+		if(StrEqual(sWeapon, SECONDARY_MELEE))
+		{
+			DetermineMeleeScript(i, iWeapon);
+			bIsDualPostol[i] = false;
+			//PrintToServer("[DeathFix]保存生还者 %N 副武器 %s(%s) 数据...", i, sWeapon, sMeleeScript[i]);
+		}
 	}
 	return Plugin_Continue;
 }
@@ -519,7 +545,7 @@ public void Event_RoundStart(Event event, const char[] name, bool dontBroadcast)
 	for(int i = 1; i <= MaxClients; i++)
 	{
 		ReSetPlayerChangeData(i);
-		sSecondary[i] = SECONDARY_PISTOL;
+		sSecondary[i] = SECONDARY_NONE;
 		sMeleeScript[i] = SECONDARY_NONE;
 		bIsDualPostol[i] = false;
 	}
