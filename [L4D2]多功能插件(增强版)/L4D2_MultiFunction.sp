@@ -413,30 +413,6 @@ public Action L4D_OnFirstSurvivorLeftSafeArea(int client)
 	{
 		if(!IsSurvivalClient(i) || !IsPlayerAlive(i)) continue;
 		ReSurvivalHealthStart(i);
-		if(!StrEqual(sSecondary[i], SECONDARY_NONE) && !StrEqual(sMeleeScript[i], SECONDARY_NONE)) continue;
-		int iWeapon = GetPlayerWeaponSlot(i, 1);
-		if(iWeapon == -1 || !IsValidEdict(iWeapon)) continue;
-		GetEntityClassname(iWeapon, sWeapon, sizeof(sWeapon));
-		if(StrContains(sWeapon, "pistol") == -1 && StrContains(sWeapon, "melee") == -1) continue;
-		if(StrEqual(sWeapon, SECONDARY_PISTOL))
-		{
-			sSecondary[i] = SECONDARY_PISTOL;
-			int IsDualGun = GetEntProp(iWeapon, Prop_Send, "m_isDualWielding", 1);
-			bIsDualPostol[i] = (IsDualGun ? true : false);
-			//PrintToServer("[DeathFix]保存生还者 %N 副武器 %s(%s) 数据...", i, sWeapon, (bIsDualPostol[i] ? "双手枪" : "单手枪"));
-		}
-		if(StrEqual(sWeapon, SECONDARY_PISTOL_MAGNUM))
-		{
-			sSecondary[i] = SECONDARY_PISTOL_MAGNUM;
-			bIsDualPostol[i] = false;
-			//PrintToServer("[DeathFix]保存生还者 %N 副武器 %s(马格南) 数据...", i, sWeapon);
-		}
-		if(StrEqual(sWeapon, SECONDARY_MELEE))
-		{
-			DetermineMeleeScript(i, iWeapon);
-			bIsDualPostol[i] = false;
-			//PrintToServer("[DeathFix]保存生还者 %N 副武器 %s(%s) 数据...", i, sWeapon, sMeleeScript[i]);
-		}
 	}
 	return Plugin_Continue;
 }
