@@ -143,6 +143,7 @@ public void OnAllPluginsLoaded()
 		if(!IsValidClient(i)) continue;
 		ReSetPlayerChangeData(i);
 		SDKHook(i, SDKHook_WeaponCanUse, OnWeaponCanUse);
+		SDKHook(i, SDKHook_WeaponDrop, OnWeaponDrop);
 	}
 }
 
@@ -219,9 +220,6 @@ public void LoadConVarString()
 
 /* -----------------------------------------------------------
 					Survival Death Drop Fix
-已知问题：
-	SDKHook	——	无法识别双手枪, 且Bot玩家会持续刷屏
-	Event		——	无法识别管理员发放的武器, 但是用表现良好
 ----------------------------------------------------------- */
 public void Event_ReplacedBotFix(Event event, const char[] name, bool dontBroadcast)
 {
@@ -265,20 +263,33 @@ public Action OnWeaponCanUse(int client, int iWeapon)
 		sSecondary[client] = SECONDARY_PISTOL;
 		int IsDualGun = GetEntProp(iWeapon, Prop_Send, "m_isDualWielding", 1);
 		bIsDualPostol[client] = (IsDualGun ? true : false);
-		PrintToServer("[OnCanUse]保存生还者 %N 副武器 %s(%s) 数据...", client, sWeapon, (bIsDualPostol[client] ? "双手枪" : "单手枪"));
+		//PrintToServer("[CanUse]保存生还者 %N 副武器 %s(%s) 数据...", client, sWeapon, (bIsDualPostol[client] ? "双手枪" : "单手枪"));
 	}
 	if(StrEqual(sWeapon, SECONDARY_PISTOL_MAGNUM))
 	{
 		sSecondary[client] = SECONDARY_PISTOL_MAGNUM;
 		bIsDualPostol[client] = false;
-		PrintToServer("[OnCanUse]保存生还者 %N 副武器 %s(马格南) 数据...", client, sWeapon);
+		//PrintToServer("[CanUse]保存生还者 %N 副武器 %s(马格南) 数据...", client, sWeapon);
 	}
 	if(StrEqual(sWeapon, SECONDARY_MELEE))
 	{
 		DetermineMeleeScript(client, iWeapon);
 		bIsDualPostol[client] = false;
-		PrintToServer("[OnCanUse]保存生还者 %N 副武器 %s(%s) 数据...", client, sWeapon, sMeleeScript[client]);
+		//PrintToServer("[CanUse]保存生还者 %N 副武器 %s(%s) 数据...", client, sWeapon, sMeleeScript[client]);
 	}
+	return Plugin_Continue;
+}
+
+public Action OnWeaponDrop(int client, int iWeapon)
+{
+	if(!IsSurvivalClient(client) || iWeapon != -1 && IsValidEdict(iWeapon)) return Plugin_Continue;
+	static char sWeapon[128];
+	GetEntityClassname(iWeapon, sWeapon, sizeof(sWeapon));
+	if(StrContains(sWeapon, "pistol") == -1 && StrContains(sWeapon, "melee") == -1) return Plugin_Continue;
+	sSecondary[client] = SECONDARY_NONE;
+	sMeleeScript[client] = SECONDARY_NONE;
+	bIsDualPostol[client] = false;
+	//PrintToServer("[Drop]移除生还者 %N 副武器 记录数据...", client);
 	return Plugin_Continue;
 }
 
@@ -320,9 +331,9 @@ public void Event_PlayerUseDropFix(Event event, const char[] name, bool dontBroa
 
 public void Event_PlayerDeathDropFix(Event event, const char[] name, bool dontBroadcast) 
 {
-	if(!g_bSurvivalDeathDrop) return;
 	int client = GetClientOfUserId(event.GetInt("userid"));
-	if(!IsSurvivalClient(client)) return;
+	if(!g_bSurvivalDeathDrop || !IsSurvivalClient(client)) return;
+	if(!StrEqual(sSecondary[client], SECONDARY_NONE) && !StrEqual(sMeleeScript[client], SECONDARY_NONE)) return;
 	L4D2_SpawnSecondaryWeapon(client, (bIsDualPostol[client] ? 2 : 1));
 }
 
@@ -369,6 +380,7 @@ public void L4D2_SpawnSecondaryWeapon(int client, int iCount)
 public void OnClientPutInServer(int client)
 {
 	SDKHook(client, SDKHook_WeaponCanUse, OnWeaponCanUse);
+	SDKHook(client, SDKHook_WeaponDrop, OnWeaponDrop);
 	if(IsFakeClient(client)) return;
 	//SDKHook(client, SDKHook_OnTakeDamage,	OnTakeDamage);
 }
@@ -385,6 +397,7 @@ public void OnClientConnected(int client)
 public void OnClientDisconnect(int client)
 {
 	SDKUnhook(client, SDKHook_WeaponCanUse, OnWeaponCanUse);
+	SDKUnhook(client, SDKHook_WeaponDrop, OnWeaponDrop);
 	//SDKUnhook(client, SDKHook_OnTakeDamage,	OnTakeDamage);
 	if(IsFakeClient(client)) return;
 	ReSetPlayerChangeData(client);
@@ -408,7 +421,6 @@ public void ReSurvivalHealthStart(int client)
 
 public Action L4D_OnFirstSurvivorLeftSafeArea(int client)
 {
-	static char sWeapon[32];
 	for(int i = 1; i <= MaxClients; i++)
 	{
 		if(!IsSurvivalClient(i) || !IsPlayerAlive(i)) continue;
@@ -677,7 +689,7 @@ public Action Command_WeaponDrop(int client, int args)
 	float vecAngles[3], vecVelocity[3];
 	GetClientEyeAngles(client, vecAngles);
 	GetAngleVectors(vecAngles, vecVelocity, NULL_VECTOR, NULL_VECTOR);
-	SDKHooks_DropWeapon(client, iWeapon, NULL_VECTOR, vecVelocity);
+	SDKHooks_DropWeapon(client, iWeapon, NULL_VECTOR, vecVelocity, false);
 	if(!StrEqual(sWeapon, "weapon_defibrillator")) return Plugin_Handled;
 	SetEntProp(iWeapon, Prop_Send, "m_iWorldModelIndex", PrecacheModel("models/w_models/weapons/w_eq_defibrillator.mdl", true));
 	return Plugin_Continue;
